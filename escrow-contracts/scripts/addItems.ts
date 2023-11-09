@@ -13,7 +13,7 @@ async function main() {
   const currentTs = await currentTimestamp();
   const nftOwnerAddress = process.env.NFT_OWNER || ''
   let duration = 1 
-  const escrowContractAddress = '0x04BD61DE5147f1be2B0E0fB0C4cF5B5853AB8478'
+  const escrowContractAddress = process.env.ESCROW_CONTRACT || ''
   const nftTokenAddress = process.env.ERC721_TOKEN || ''
   const nftFactory = await ethers.getContractFactory('TestToken')
   const nft = nftFactory.attach(nftTokenAddress)
@@ -26,7 +26,7 @@ async function main() {
   await isApproved.wait()
   if(isApproved){
     console.log('Is approved. Depositing ...')
-   const tx = await Escrow.deposit(nftOwnerAddress, nftIdTobeListed,1 )
+   const tx = await Escrow.deposit(nftOwnerAddress, nftIdTobeListed, 1 )
    await tx.wait()
 
   }

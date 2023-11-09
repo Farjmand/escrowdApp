@@ -1,50 +1,55 @@
+import {expect} from 'chai'
+import {ethers, network} from 'hardhat'
+import {BigNumber, ContractTransaction} from 'ethers'
+import {Escrow, TestToken, ERC20TestToken__factory ,TestToken__factory, Escrow__factory, ERC20TestToken} from '../typechain'
+import {SignerWithAddress} from '@nomiclabs/hardhat-ethers/signers'
 
-const { expect } = require("chai");
-const chai = require('chai');
-const numberToBN = require('number-to-bn');
-const { network } = require("hardhat");
-
-describe("EscrowERC721", function () {
-    let Escrow;
-    let escrow;
-    let TestERC721Token;
-    let testERC721Token;
-    let TestToken;
-    let testToken;
-    let owner;
-    let addr1;
-    let addr2;
-    let addr3;
+describe("Escrow", function () {
+    let Escrow: Escrow;
+    let escrow__fact:Escrow__factory ;
+    let nft__Fact: TestToken__factory;
+    let ERC721Token: TestToken;
+    let erc20__Fact: ERC20TestToken__factory;
+    let ERC20Token: ERC20TestToken;
+    let owner:SignerWithAddress;
+    let addr1:SignerWithAddress;
+    let addr2:SignerWithAddress;
+    let addr3:SignerWithAddress;
     let addrs;
     const fee = 1;
     const tokenSupply = 10000000000000;
+    const trustedForwarder = '0x0000000000000000000000000000000000000001'
 
     beforeEach(async function () {
         // Get the ContractFactory and Signers here.
-        Escrow = await ethers.getContractFactory("EscrowERC721");
-        TestToken = await ethers.getContractFactory("ERC20TestToken");
-        TestERC721Token = await ethers.getContractFactory("ERC721TestToken");
-        [owner, addr1, addr2, addr3, ...addrs] = await ethers.getSigners();
-        
+      [owner, addr1, addr2, addr3, ...addrs] = await ethers.getSigners();
+        escrow__fact = await ethers.getContractFactory("Escrow");
+    
+        //Deploying fake USDC 
+        erc20__Fact = await ethers.getContractFactory("ERC20TestToken");
+        ERC20Token = await erc20__Fact.deploy();
+       //Deploying NFT contract
+        nft__Fact =  await ethers.getContractFactory('TestToken');
+        ERC721Token = await nft__Fact.deploy(owner.address);
         // To deploy our contract, we just have to call Token.deploy() and await
         // for it to be deployed(), which happens onces its transaction has been
         // mined.
-        testToken = await TestToken.deploy();
-        testERC721Token = await TestERC721Token.deploy();
-        escrow = await Escrow.deploy(testERC721Token.address, testToken.address, fee);
+        
+       
+        Escrow = await escrow__fact.deploy(ERC721Token.address, ERC20Token.address, fee, trustedForwarder);
     
-        const approveTx = await testToken.connect(owner).approve(owner.address, tokenSupply);
+        const approveTx = await ERC20Token.connect(owner).approve(owner.address, tokenSupply);
         // wait until the transaction is mined
         await approveTx.wait();
       });
 
       describe("Deployment", function () {
         it("Should set the right owner", async function () {
-          expect(await escrow.owner()).to.equal(owner.address);
+          expect(await Escrow.owner()).to.equal(owner.address);
         });
     
         it("Should set the right fee to 1", async function () {
-            expect(await escrow.fee()).to.equal(fee);
+            expect(await Escrow.fee()).to.equal(fee);
           });
       });
 
@@ -55,40 +60,40 @@ describe("EscrowERC721", function () {
             let item = 1;
             let expiration = 1;
 
-            expect((await testToken.balanceOf(owner.address)).toNumber()).to.equal(tokenSupply);
-            expect((await testToken.balanceOf(addr1.address)).toNumber()).to.equal(0);
+            expect((await ERC20Token.balanceOf(owner.address)).toNumber()).to.equal(tokenSupply);
+            expect((await ERC20Token.balanceOf(addr1.address)).toNumber()).to.equal(0);
 
-            const approveFeeTokenTx = await testToken.connect(owner).approve(addr1.address, addr1Balance);
+            const approveFeeTokenTx = await ERC20Token.connect(owner).approve(addr1.address, addr1Balance);
             await approveFeeTokenTx.wait();
 
-            const transferFeeTokenTx = await testToken.transferFrom(owner.address, addr1.address, addr1Balance);
+            const transferFeeTokenTx = await ERC20Token.transferFrom(owner.address, addr1.address, addr1Balance);
             await transferFeeTokenTx.wait();
 
-            expect((await testToken.balanceOf(owner.address)).toNumber()).to.equal(tokenSupply - addr1Balance);
-            expect((await testToken.balanceOf(addr1.address)).toNumber()).to.equal(addr1Balance);
+            expect((await ERC20Token.balanceOf(owner.address)).toNumber()).to.equal(tokenSupply - addr1Balance);
+            expect((await ERC20Token.balanceOf(addr1.address)).toNumber()).to.equal(addr1Balance);
             
-            const approveTx = await testToken.connect(addr1).approve(escrow.address, fee);
+            const approveTx = await ERC20Token.connect(addr1).approve(Escrow.address, fee);
             await approveTx.wait();
 
-            const mintTx = await testERC721Token.mint(addr1.address, item);
+            const mintTx = await ERC721Token.safeMint(addr1.address, item);
             await mintTx.wait();
 
-            expect(await testERC721Token.ownerOf(item)).to.equal(addr1.address);
+            expect(await ERC721Token.ownerOf(item)).to.equal(addr1.address);
 
-            const approveERC721TokenTx = await testERC721Token.connect(addr1).approve(escrow.address, item);
+            const approveERC721TokenTx = await ERC721Token.connect(addr1).approve(Escrow.address, item);
             await approveERC721TokenTx.wait();
 
-            const depositTx = await escrow.connect(addr1).deposit(addr2.address, item, expiration);
+            const depositTx = await Escrow.connect(addr1).deposit(addr2.address, item, expiration);
             await depositTx.wait();
 
-            expect((await testToken.balanceOf(addr1.address)).toNumber()).to.equal(addr1Balance-fee);
+            expect((await ERC20Token.balanceOf(addr1.address)).toNumber()).to.equal(addr1Balance-fee);
 
-            const transferFeeTx = await escrow.connect(owner).transferFee();
+            const transferFeeTx = await Escrow.connect(owner).transferFee();
             await transferFeeTx.wait();
 
-            expect((await testToken.balanceOf(escrow.address)).toNumber()).to.equal(itemId);
-            expect((await testToken.balanceOf(addr1.address)).toNumber()).to.equal(addr1Balance-fee);
-            expect((await testToken.balanceOf(owner.address)).toNumber()).to.equal(tokenSupply - addr1Balance + fee);
+            expect((await ERC20Token.balanceOf(Escrow.address)).toNumber()).to.equal(itemId);
+            expect((await ERC20Token.balanceOf(addr1.address)).toNumber()).to.equal(addr1Balance-fee);
+            expect((await ERC20Token.balanceOf(owner.address)).toNumber()).to.equal(tokenSupply - addr1Balance + fee);
         });
 
         it("Should not allow any address to collect fees", async function () {
@@ -97,39 +102,39 @@ describe("EscrowERC721", function () {
             let item = 1;
             let expiration = 1;
 
-            expect((await testToken.balanceOf(owner.address)).toNumber()).to.equal(tokenSupply);
-            expect((await testToken.balanceOf(addr1.address)).toNumber()).to.equal(0);
+            expect((await ERC20Token.balanceOf(owner.address)).toNumber()).to.equal(tokenSupply);
+            expect((await ERC20Token.balanceOf(addr1.address)).toNumber()).to.equal(0);
 
-            const approveFeeTokenTx = await testToken.connect(owner).approve(addr1.address, addr1Balance);
+            const approveFeeTokenTx = await ERC20Token.connect(owner).approve(addr1.address, addr1Balance);
             await approveFeeTokenTx.wait();
 
-            const transferFeeTokenTx = await testToken.transferFrom(owner.address, addr1.address, addr1Balance);
+            const transferFeeTokenTx = await ERC20Token.transferFrom(owner.address, addr1.address, addr1Balance);
             await transferFeeTokenTx.wait();
 
-            expect((await testToken.balanceOf(owner.address)).toNumber()).to.equal(tokenSupply - addr1Balance);
-            expect((await testToken.balanceOf(addr1.address)).toNumber()).to.equal(addr1Balance);
+            expect((await ERC20Token.balanceOf(owner.address)).toNumber()).to.equal(tokenSupply - addr1Balance);
+            expect((await ERC20Token.balanceOf(addr1.address)).toNumber()).to.equal(addr1Balance);
             
-            const approveTx = await testToken.connect(addr1).approve(escrow.address, fee);
+            const approveTx = await ERC20Token.connect(addr1).approve(Escrow.address, fee);
             await approveTx.wait();
 
-            const mintTx = await testERC721Token.mint(addr1.address, item);
+            const mintTx = await ERC721Token.safeMint(addr1.address, item);
             await mintTx.wait();
 
-            expect(await testERC721Token.ownerOf(item)).to.equal(addr1.address);
+            expect(await ERC721Token.ownerOf(item)).to.equal(addr1.address);
 
-            const approveERC721TokenTx = await testERC721Token.connect(addr1).approve(escrow.address, item);
+            const approveERC721TokenTx = await ERC721Token.connect(addr1).approve(Escrow.address, item);
             await approveERC721TokenTx.wait();
 
-            const depositTx = await escrow.connect(addr1).deposit(addr2.address, item, expiration);
+            const depositTx = await Escrow.connect(addr1).deposit(addr2.address, item, expiration);
             await depositTx.wait();
 
-            expect((await testToken.balanceOf(addr1.address)).toNumber()).to.equal(addr1Balance-fee);
+            expect((await ERC20Token.balanceOf(addr1.address)).toNumber()).to.equal(addr1Balance-fee);
 
-            expect(escrow.connect(addr1).transferFee()).to.be.revertedWith("Must be an owner.");
+            expect(Escrow.connect(addr1).transferFee()).to.be.revertedWith("Must be an owner.");
 
-            expect((await testToken.balanceOf(escrow.address)).toNumber()).to.equal(fee);
-            expect((await testToken.balanceOf(addr1.address)).toNumber()).to.equal(addr1Balance-fee);
-            expect((await testToken.balanceOf(owner.address)).toNumber()).to.equal(tokenSupply - addr1Balance);
+            expect((await ERC20Token.balanceOf(Escrow.address)).toNumber()).to.equal(fee);
+            expect((await ERC20Token.balanceOf(addr1.address)).toNumber()).to.equal(addr1Balance-fee);
+            expect((await ERC20Token.balanceOf(owner.address)).toNumber()).to.equal(tokenSupply - addr1Balance);
         });
       });  
 
@@ -139,25 +144,25 @@ describe("EscrowERC721", function () {
             let item = 1;
             let expiration = 1;
 
-            expect((await testToken.balanceOf(owner.address)).toNumber()).to.equal(tokenSupply);
+            expect((await ERC20Token.balanceOf(owner.address)).toNumber()).to.equal(tokenSupply);
             
-            const approveTx = await testToken.approve(escrow.address, fee);
+            const approveTx = await ERC20Token.approve(Escrow.address, fee);
             await approveTx.wait();
 
-            const mintTx = await testERC721Token.mint(owner.address, item);
+            const mintTx = await ERC721Token.safeMint(owner.address, item);
             await mintTx.wait();
 
-            expect(await testERC721Token.ownerOf(item)).to.equal(owner.address);
+            expect(await ERC721Token.ownerOf(item)).to.equal(owner.address);
 
-            const approveERC721TokenTx = await testERC721Token.approve(escrow.address, item);
+            const approveERC721TokenTx = await ERC721Token.approve(Escrow.address, item);
             await approveERC721TokenTx.wait();
 
-            const depositTx = await escrow.connect(owner).deposit(addr1.address, item, expiration);
+            const depositTx = await Escrow.connect(owner).deposit(addr1.address, item, expiration);
             await depositTx.wait();
 
-            await expect(depositTx).to.emit(escrow, 'Deposited').withArgs(itemId, addr1.address, testERC721Token.address, item);
+            await expect(depositTx).to.emit(Escrow, 'Deposited').withArgs(itemId, addr1.address, ERC721Token.address, item);
 
-            expect((await testToken.balanceOf(owner.address)).toNumber()).to.equal(tokenSupply-fee);
+            expect((await ERC20Token.balanceOf(owner.address)).toNumber()).to.equal(tokenSupply-fee);
           });
 
         it("Should allow to deposit ERC721 compatible token from not a contract owner address", async function () {
@@ -166,36 +171,36 @@ describe("EscrowERC721", function () {
             let item = 1;
             let expiration = 1;
 
-            const approveFeeTokenTx = await testToken.connect(owner).approve(addr1.address, addr1Balance);
+            const approveFeeTokenTx = await ERC20Token.connect(owner).approve(addr1.address, addr1Balance);
             await approveFeeTokenTx.wait();
 
-            const transferFeeTokenTx = await testToken.transferFrom(owner.address, addr1.address, addr1Balance);
+            const transferFeeTokenTx = await ERC20Token.transferFrom(owner.address, addr1.address, addr1Balance);
             await transferFeeTokenTx.wait();
 
-            expect((await testToken.balanceOf(addr1.address)).toNumber()).to.equal(addr1Balance);
+            expect((await ERC20Token.balanceOf(addr1.address)).toNumber()).to.equal(addr1Balance);
             
-            const approveTx = await testToken.connect(addr1).approve(escrow.address, fee);
+            const approveTx = await ERC20Token.connect(addr1).approve(Escrow.address, fee);
             await approveTx.wait();
 
-            const mintTx = await testERC721Token.mint(addr1.address, item);
+            const mintTx = await ERC721Token.safeMint(addr1.address, item);
             await mintTx.wait();
 
-            expect(await testERC721Token.ownerOf(item)).to.equal(addr1.address);
+            expect(await ERC721Token.ownerOf(item)).to.equal(addr1.address);
 
-            const approveERC721TokenTx = await testERC721Token.connect(addr1).approve(escrow.address, item);
+            const approveERC721TokenTx = await ERC721Token.connect(addr1).approve(Escrow.address, item);
             await approveERC721TokenTx.wait();
 
-            const depositTx = await escrow.connect(addr1).deposit(addr2.address, item, expiration);
+            const depositTx = await Escrow.connect(addr1).deposit(addr2.address, item, expiration);
             await depositTx.wait();
 
-            await expect(depositTx).to.emit(escrow, 'Deposited').withArgs(itemId, addr2.address, testERC721Token.address, item);
+            await expect(depositTx).to.emit(Escrow, 'Deposited').withArgs(itemId, addr2.address, ERC721Token.address, item);
 
-            expect((await testToken.balanceOf(addr1.address)).toNumber()).to.equal(addr1Balance-fee);
+            expect((await ERC20Token.balanceOf(addr1.address)).toNumber()).to.equal(addr1Balance-fee);
 
             let latestBlock = await network.provider.send("eth_getBlockByNumber", ["latest", false]);
-            expectedBlock = parseInt(latestBlock.timestamp, 16) + expiration;
+            const expectedBlock = parseInt(latestBlock.timestamp, 16) + expiration;
 
-            escrowItem = await escrow.erc721Items(itemId);
+           const escrowItem = await Escrow.escrowItems(itemId);
             expect(escrowItem.seller).to.equal(addr2.address);
             expect(escrowItem.buyer).to.equal(addr1.address);
             expect(escrowItem.item).to.equal(item);
@@ -207,30 +212,30 @@ describe("EscrowERC721", function () {
             let item = 1;
             let expiration = 1;
 
-            expect((await testToken.balanceOf(owner.address)).toNumber()).to.equal(tokenSupply);
+            expect((await ERC20Token.balanceOf(owner.address)).toNumber()).to.equal(tokenSupply);
             
-            const approveTx = await testToken.approve(escrow.address, fee);
+            const approveTx = await ERC20Token.approve(Escrow.address, fee);
             await approveTx.wait();
 
-            const mintTx = await testERC721Token.mint(owner.address, fee);
+            const mintTx = await ERC721Token.safeMint(owner.address, fee);
             await mintTx.wait();
 
-            expect(await testERC721Token.ownerOf(item)).to.equal(owner.address);
+            expect(await ERC721Token.ownerOf(item)).to.equal(owner.address);
 
-            const approveERC721TokenTx = await testERC721Token.approve(escrow.address, item);
+            const approveERC721TokenTx = await ERC721Token.approve(Escrow.address, item);
             await approveERC721TokenTx.wait();
 
-            const depositTx = await escrow.connect(owner).deposit(addr1.address, item, expiration);
+            const depositTx = await Escrow.connect(owner).deposit(addr1.address, item, expiration);
             await depositTx.wait();
 
-            await expect(depositTx).to.emit(escrow, 'Deposited').withArgs(0, addr1.address, testERC721Token.address, item);
+            await expect(depositTx).to.emit(Escrow, 'Deposited').withArgs(0, addr1.address, ERC721Token.address, item);
 
-            expect((await testToken.balanceOf(owner.address)).toNumber()).to.equal(tokenSupply-fee);
+            expect((await ERC20Token.balanceOf(owner.address)).toNumber()).to.equal(tokenSupply-fee);
 
             let latestBlock = await network.provider.send("eth_getBlockByNumber", ["latest", false]);
-            expectedBlock = parseInt(latestBlock.timestamp, 16) + expiration;
+            const expectedBlock = parseInt(latestBlock.timestamp, 16) + expiration;
 
-            escrowItem = await escrow.erc721Items(itemId);
+            const escrowItem = await Escrow.escrowItems(itemId);
             expect(escrowItem.seller).to.equal(addr1.address);
             expect(escrowItem.buyer).to.equal(owner.address);
             expect(escrowItem.item).to.equal(item);
@@ -241,17 +246,17 @@ describe("EscrowERC721", function () {
             let item = 1;
             let expiration = 1;
 
-            expect((await testToken.balanceOf(addr1.address)).toNumber()).to.equal(0);
+            expect((await ERC20Token.balanceOf(addr1.address)).toNumber()).to.equal(0);
 
-            const mintTx = await testERC721Token.mint(addr1.address, item);
+            const mintTx = await ERC721Token.safeMint(addr1.address, item);
             await mintTx.wait();
 
-            expect(await testERC721Token.ownerOf(item)).to.equal(addr1.address);
+            expect(await ERC721Token.ownerOf(item)).to.equal(addr1.address);
 
-            const approveERC721TokenTx = await testERC721Token.connect(addr1).approve(escrow.address, item);
+            const approveERC721TokenTx = await ERC721Token.connect(addr1).approve(Escrow.address, item);
             await approveERC721TokenTx.wait();
 
-            expect(escrow.connect(addr1).deposit(addr2.address, item, expiration)).to.be.revertedWith("ERC20: transfer amount exceeds balance");
+            expect(Escrow.connect(addr1).deposit(addr2.address, item, expiration)).to.be.revertedWith("ERC20: transfer amount exceeds balance");
         });
       });
 
@@ -261,26 +266,26 @@ describe("EscrowERC721", function () {
             let item = 1;
             let expiration = 1;
 
-            expect((await testToken.balanceOf(owner.address)).toNumber()).to.equal(tokenSupply);
+            expect((await ERC20Token.balanceOf(owner.address)).toNumber()).to.equal(tokenSupply);
             
-            const approveTx = await testToken.approve(escrow.address, fee);
+            const approveTx = await ERC20Token.approve(Escrow.address, fee);
             await approveTx.wait();
 
-            const mintTx = await testERC721Token.mint(owner.address, item);
+            const mintTx = await ERC721Token.safeMint(owner.address, item);
             await mintTx.wait();
 
-            expect(await testERC721Token.ownerOf(item)).to.equal(owner.address);
+            expect(await ERC721Token.ownerOf(item)).to.equal(owner.address);
 
-            const approveERC721TokenTx = await testERC721Token.approve(escrow.address, item);
+            const approveERC721TokenTx = await ERC721Token.approve(Escrow.address, item);
             await approveERC721TokenTx.wait();
 
-            const depositTx = await escrow.connect(owner).deposit(addr1.address, item, expiration);
+            const depositTx = await Escrow.connect(owner).deposit(addr1.address, item, expiration);
             await depositTx.wait();
 
             let latestBlock = await network.provider.send("eth_getBlockByNumber", ["latest", false]);
-            expectedBlock = parseInt(latestBlock.timestamp, 16) + expiration;
+            const expectedBlock = parseInt(latestBlock.timestamp, 16) + expiration;
 
-            let escrowItem = await escrow.erc721Items(itemId);
+            let escrowItem = await Escrow.escrowItems(itemId);
             expect(escrowItem.expiration).to.equal(expectedBlock);
 
             await network.provider.send("evm_setNextBlockTimestamp", [expectedBlock])
@@ -289,14 +294,14 @@ describe("EscrowERC721", function () {
             let futureLatestBlock = await network.provider.send("eth_getBlockByNumber", ["latest", false]);
             expect(escrowItem.expiration).to.equal(parseInt(futureLatestBlock.timestamp, 16));
 
-            const withdrawTx = await escrow.withdraw(itemId);
+            const withdrawTx = await Escrow.withdraw(itemId);
             await withdrawTx.wait();
 
-            await expect(withdrawTx).to.emit(escrow, 'Withdrawn').withArgs(0, addr1.address, testERC721Token.address, item);
+            await expect(withdrawTx).to.emit(Escrow, 'Withdrawn').withArgs(0, addr1.address, ERC721Token.address, item);
             
-            expect(await testERC721Token.ownerOf(item)).to.equal(addr1.address);
+            expect(await ERC721Token.ownerOf(item)).to.equal(addr1.address);
             
-            escrowItem = await escrow.erc721Items(itemId);
+            escrowItem = await Escrow.escrowItems(itemId);
             expect(escrowItem.seller).to.equal(ethers.constants.AddressZero);
             expect(escrowItem.buyer).to.equal(ethers.constants.AddressZero);
             expect(escrowItem.item).to.equal(0);
@@ -308,33 +313,33 @@ describe("EscrowERC721", function () {
             let item = 1;
             let expiration = 1;
 
-            expect((await testToken.balanceOf(owner.address)).toNumber()).to.equal(tokenSupply);
+            expect((await ERC20Token.balanceOf(owner.address)).toNumber()).to.equal(tokenSupply);
             
-            const approveTx = await testToken.approve(escrow.address, fee);
+            const approveTx = await ERC20Token.approve(Escrow.address, fee);
             await approveTx.wait();
 
-            const mintTx = await testERC721Token.mint(owner.address, item);
+            const mintTx = await ERC721Token.safeMint(owner.address, item);
             await mintTx.wait();
 
-            expect(await testERC721Token.ownerOf(item)).to.equal(owner.address);
+            expect(await ERC721Token.ownerOf(item)).to.equal(owner.address);
 
-            const approveERC721TokenTx = await testERC721Token.approve(escrow.address, item);
+            const approveERC721TokenTx = await ERC721Token.approve(Escrow.address, item);
             await approveERC721TokenTx.wait();
 
-            const depositTx = await escrow.connect(owner).deposit(addr1.address, item, expiration);
+            const depositTx = await Escrow.connect(owner).deposit(addr1.address, item, expiration);
             await depositTx.wait();
 
             let latestBlock = await network.provider.send("eth_getBlockByNumber", ["latest", false]);
-            expectedBlock = parseInt(latestBlock.timestamp, 16) + expiration;
+            const expectedBlock = parseInt(latestBlock.timestamp, 16) + expiration;
 
-            let escrowItem = await escrow.erc721Items(itemId);
+            let escrowItem = await Escrow.escrowItems(itemId);
             expect(escrowItem.expiration).to.equal(expectedBlock);
 
-            expect(escrow.withdraw(0)).to.be.revertedWith("The item is still in escrow.");
+            expect(Escrow.withdraw(0)).to.be.revertedWith("The item is still in escrow.");
 
-            expect(await testERC721Token.ownerOf(item)).to.equal(escrow.address);
+            expect(await ERC721Token.ownerOf(item)).to.equal(Escrow.address);
 
-            escrowItem = await escrow.erc721Items(itemId);
+            escrowItem = await Escrow.escrowItems(itemId);
             expect(escrowItem.seller).to.equal(addr1.address);
             expect(escrowItem.buyer).to.equal(owner.address);
             expect(escrowItem.item).to.equal(item);
