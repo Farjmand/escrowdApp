@@ -1,0 +1,17 @@
+
+[
+    {
+      "id": 1,
+      "name": "NFT 1",
+      "description": "Description for NFT 1",
+      "imageUrl": "/images/nft1.jpg"
+    },
+    {
+      "id": 2,
+      "name": "NFT 2",
+      "description": "Description for NFT 2",
+      "imageUrl": "/images/nft2.jpg"
+    }
+
+  ]
+  

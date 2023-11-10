@@ -8,7 +8,7 @@ const { RelayProvider } = require('@openzeppelin/gsn-helpers');
 const web3 = new Web3(gsnProvider);
 const privateKey = process.env.PRIVATE_KEY || ''
 const wallet = web3.eth.accounts.privateKeyToAccount(privateKey);
-
+const owner = process.env.NFT_OWNER || ''
 const contractAddress = process.env.ESCROW_CONTRACT || '';
 const contractAbi = require('./abi/escrow_abi.json');
 
@@ -18,15 +18,15 @@ const contract = new web3.eth.Contract(contractAbi, contractAddress);
 app.use(express.json());
 
 const gsnProvider = new RelayProvider(provider, {
-  forwarderAddress: 'YOUR_FORWARDER_ADDRESS', // Address of the GSN Forwarder contract
-  paymasterAddress: 'YOUR_PAYMASTER_ADDRESS', // Address of your Paymaster contract
+  forwarderAddress: process.env.FORWARDER_ADDRESS || '' , // Address of the GSN Forwarder contract
+  paymasterAddress: process.env.PAYMASTER_ADDRESS || '', // Address of GSN Paymaster contract
 });
 // Define routes for listing and purchasing tokens
     app.post('/list-token', async (req, res) => {
         const tokenId = req.body.tokenId;
         const price = req.body.price; // in Wei
       
-        const data = contract.methods.deposit(tokenId, price).encodeABI();
+        const data = contract.methods.deposit(owner, tokenId, price).encodeABI();
       
         const nonce = await web3.eth.getTransactionCount(wallet.address, 'pending');
         const gasPrice = await web3.eth.getGasPrice();
